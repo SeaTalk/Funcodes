@@ -1,4 +1,4 @@
-# vccode
+# FunCodes
 ### FUN TO CODE, ENJOY!!!
 **Most code here do not have practicle using. We can code anything smart or dump.**
 
