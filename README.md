@@ -6,3 +6,4 @@
 2.  Add a DumbKMP Matcher.[2018.07.16]
     -  Usually, we find a substring in another by function"string.find()". I just want to separate charactors first since each charactor may encoded by UTF8 or GBK or just ASCII, and find the substring by KMP.
 3. mkdir folder "tests" for some test codes. 
+4. mkdir folder "scripts" for scripts codes.
