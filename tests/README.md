@@ -11,3 +11,6 @@
 
 **4. object_life_time**
 - this test illustrates that objects in submodule are released earlyer.
+
+**5. CallFatherFunc**
+- this is a example of calling father's function in a son's object.
