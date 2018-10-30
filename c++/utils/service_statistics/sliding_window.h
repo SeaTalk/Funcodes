@@ -5,7 +5,7 @@
 
 template <typename T, typename O>
 class sliding_window
-    : public i_service_window<T>
+    : public i_service_window<T, O>
 {
 
 public:

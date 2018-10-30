@@ -23,6 +23,14 @@ int sliding_window_state<T>::push(state_info<T> &item)
     m_fixed_slots[m_rear] = item;
     m_rear = (m_rear + 1) % m_window_capacity;
     ++m_window_size;
+    if (m_states_count.find(item.state_value) == m_states_count.end())
+    {
+        m_states_count[item.state_value] = 1;
+    }
+    else
+    {
+        ++ m_states_count[item.state_value];
+    }
     return 0;
 }
 
@@ -36,6 +44,10 @@ state_info<T> sliding_window_state<T>::pop()
     state_info<T> tmp = m_fixed_slots[m_front];
     m_front = (m_front + 1) % m_window_capacity;
     --m_window_size;
+    if (m_states_count.find(tmp.state_value) != m_states_count.end() && m_states_count[tmp.state_value] > 0 )
+    {
+        -- m_states_count[tmp.state_value];
+    }
     return tmp;
 }
 

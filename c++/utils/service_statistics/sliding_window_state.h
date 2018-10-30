@@ -2,6 +2,7 @@
 #define SERVICE_STATIS_SLIDING_WINDOW_STATE_H
 
 #include "i_service_state.h"
+#include <unordered_map>
 
 template <typename I>
 struct state_info
@@ -22,6 +23,7 @@ private:
     int32_t m_rear;
     int32_t m_window_size;
     uint32_t m_timeout_ms;
+    unordered_map<S, int32_t> m_states_count;
 public:
     sliding_window_state(uint32_t size, uint32_t timout):
         m_window_capacity(size),
@@ -29,7 +31,8 @@ public:
         m_front(0),
         m_rear(0),
         m_window_size(0),
-        m_timeout_ms(timout)
+        m_timeout_ms(timout),
+        m_states_count(2)
     {
         init_state();
     }
@@ -40,7 +43,8 @@ public:
         m_front(0),
         m_rear(0),
         m_window_size(0),
-        m_timeout_ms(0)
+        m_timeout_ms(0),
+        m_states_count(2)
     {
         init_state();
     }

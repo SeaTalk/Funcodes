@@ -8,7 +8,7 @@ class i_service_window
 {
 
 public:
-    virtual i_service_window(i_state<T> window_state);
+    virtual i_service_window(i_state<T> *window_state);
     virtual ~i_service_window()
     {
         delete m_window_state;
@@ -20,7 +20,7 @@ public:
     // for user_defined function
     G get_result();
 
-private:
+protected:
     i_state<T> *m_window_state;
 
 
