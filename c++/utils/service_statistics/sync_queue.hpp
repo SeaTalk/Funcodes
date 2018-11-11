@@ -27,6 +27,7 @@ public:
         boost::lock_guard<boost::mutex> locker(m_mutex);
         if (isFull())
         {
+            m_not_empty.notify_one();
             return -1;  //队列满了不等待
         }
         m_queue.push_back(x);
@@ -38,7 +39,9 @@ public:
         boost::lock_guard<boost::mutex> locker(m_mutex);
         while (isEmpty())
         {
-            m_not_empty.wait(m_mutex);
+            //m_not_empty.wait(m_mutex);
+            m_not_full.notify_one();
+            return -1;
         }
         x = m_queue.m_front();
         m_queue.pop_front();

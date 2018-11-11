@@ -2,7 +2,7 @@
 
 template <typename T>
 statistic_server<T>::statistic_server(i_state<T> *state)
-    : sliding_window<T>(state)
+    : sliding_window<T>(state), run_sign(true)
 {
     t = boost::thread(&statistic_server<T>::read_queue_update_window, this);
 }
@@ -35,6 +35,9 @@ template <typename T>
 void statistic_server<T>::read_queue_update_window()
 {
     T value;
-    queue.take(value);
-    sliding_window::update_state(value);
+    while (run_sign)
+    { 
+        queue.take(value);
+        sliding_window::update_state(value);
+    }
 }

@@ -20,6 +20,7 @@ public:
 private:
     sync_queue<T> queue;
     boost::thread t;
+    bool run_sign;
 
     void read_queue_update_window();
 };
