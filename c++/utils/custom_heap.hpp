@@ -29,7 +29,7 @@ public:
         if (0 >= _capacity) {
             throw wrong_capacity_heap();
         }
-        _heap = std::make_shared<T>(new T[_capacity]);
+        _heap = std::shared_ptr<T>(new T[_capacity], deleter);
     }
     CustomHeap() = delete;
     CustomHeap(const CustomHeap& c) = delete;
@@ -43,12 +43,18 @@ public:
 private:
     int build_heap();
     int fix_heap();
+    static void deleter(T *p);
 
     shared_ptr<T> _heap;
     size_t _capacity;
     size_t _current_size;
     function<bool (T, T)> _compare;
 };
+
+template <class T>
+void CustomHeap<T>::deleter(T *p) {
+    delete []p;
+}
 
 template <class T>
 int CustomHeap<T>::insert(T item) {
@@ -92,7 +98,7 @@ int CustomHeap<T>::fix_heap() {
     bool has_child = true;
     while (ind < _current_size and has_child) {
         int j = (ind << 1) + 1;
-        int k = (ind + 1) >> 1;
+        int k = (ind + 1) << 1;
         int tmp = j;
         has_child = false;
         if (k < _current_size and _compare(_heap.get()[j], _heap.get()[ind])) {
