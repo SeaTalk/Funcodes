@@ -1,0 +1,15 @@
+workspace(name = "boost_test")
+
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "third_party_bazel",
+    strip_prefix = "bazel_lib-bc086e5d99c22458327984037c77dd386f8834ac",
+    url = "https://github.com/SeaTalk/bazel_lib/releases/download/v0.1/bc086e5d99c22458327984037c77dd386f8834ac.tar.gz",
+)
+http_archive(
+    name = "com_google_googletest",
+    strip_prefix = "googletest-0fe96607d85cf3a25ac40da369db62bbee2939a5",
+    url = "https://github.com/google/googletest/archive/0fe96607d85cf3a25ac40da369db62bbee2939a5.tar.gz",
+)
