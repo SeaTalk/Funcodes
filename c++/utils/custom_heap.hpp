@@ -35,10 +35,10 @@ public:
     CustomHeap(const CustomHeap& c) = delete;
     CustomHeap& operator= (const CustomHeap& c) = delete;
 
-    int insert(T elem);
+    int insert(const T &elem);
     bool heap_empty();
     int resize_heap();
-    T get(int i);
+    const T& get(int i) const;
 
 private:
     int build_heap();
@@ -57,7 +57,7 @@ void CustomHeap<T>::deleter(T *p) {
 }
 
 template <class T>
-int CustomHeap<T>::insert(T item) {
+int CustomHeap<T>::insert(const T &item) {
     if (_current_size < _capacity) {
         _heap.get()[_current_size++] = item;
         if (_current_size == _capacity) {
@@ -140,10 +140,11 @@ int CustomHeap<T>::resize_heap() {
 
 
 template <class T>
-T CustomHeap<T>::get(int i) {
-    if (i < 0 or i > _capacity) {
-        return T();
-    }
+const T& CustomHeap<T>::get(int i) const{
+    // if (i < 0 or i > _capacity) {
+    //     return T();
+    // }
+    assert(i >= 0 and i < _current_size);
     return _heap.get()[i];
 }
 
