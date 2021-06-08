@@ -1,10 +1,10 @@
 #pragma once
 #include <atomic>
-#include <iostream>
 
 class LockFreeRWContention {
  public:
-    LockFreeRWContention() : l_(0), w_(ATOMIC_FLAG_INIT) { }
+    LockFreeRWContention() : l_(0), w_(ATOMIC_FLAG_INIT),
+                             rl_(this), wl_(this) { }
 
     class LockFreeRWLock {
      public:
@@ -32,8 +32,8 @@ class LockFreeRWContention {
         LockFreeRWContention *contention_;
     };
 
-    ReadLock GetReadLock() { return ReadLock(this); }
-    WriteLock GetWriteLock() { return WriteLock(this); }
+    ReadLock &GetReadLock() { return rl_; }
+    WriteLock &GetWriteLock() { return wl_; }
 
  private:
     void Read() {
@@ -62,4 +62,6 @@ class LockFreeRWContention {
 
     std::atomic<int32_t> l_;
     std::atomic_flag w_;
+    ReadLock rl_;
+    WriteLock wl_;
 };
