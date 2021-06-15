@@ -16,6 +16,7 @@ class LockFreeRWContention {
      public:
         ReadLock(LockFreeRWContention *c) : LockFreeRWLock(), contention_(c) { }
         void lock() { contention_->Read(); }
+        bool try_lock() { contention_->TryRead(); }
         void unlock() { contention_->DoneRead(); }
 
      private:
@@ -26,6 +27,7 @@ class LockFreeRWContention {
      public:
         WriteLock(LockFreeRWContention *c) : LockFreeRWLock(), contention_(c) { }
         void lock() { contention_->Write(); }
+        bool try_lock() { contention_->TryWrite(); }
         void unlock() { contention_->DoneWrite(); }
 
      private:
@@ -43,6 +45,15 @@ class LockFreeRWContention {
                                          std::memory_order_release));
     }
 
+    bool TryRead() {
+        int32_t cnt(0);
+        if ((cnt = l_.load(std::memory_order_acquire)) < 0 ||
+            !l_.compare_exchange_strong(cnt, cnt + 1, std::memory_order_release)) {
+            return false;
+        }
+        return true;
+    }
+
     void DoneRead() {
         l_.fetch_sub(1, std::memory_order_release);
     }
@@ -53,6 +64,16 @@ class LockFreeRWContention {
         while(!l_.compare_exchange_weak(cnt, cnt | 0x80000000,
                                         std::memory_order_release));
         while((cnt = l_.load(std::memory_order_acquire)) > 0x80000000);
+    }
+
+    bool TryWrite() {
+        if (w_.test_and_set(std::memory_order_relaxed)) { return false; }
+        int32_t cnt = l_.load(std::memory_order_acquire);
+        if (!l_.compare_exchange_strong(cnt, cnt | 0x80000000, std::memory_order_release)) {
+            return false;
+        }
+        while((cnt = l_.load(std::memory_order_acquire)) > 0x80000000);
+        return true;
     }
 
     void DoneWrite() {

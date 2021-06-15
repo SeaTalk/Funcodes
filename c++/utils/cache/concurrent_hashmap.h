@@ -13,26 +13,35 @@ template<class Key, class Value,
 class ConcurrentHashMap {
  public:
     template<typename T>
-    struct InnerListNode {
-        InnerListNode() { }
+    struct ConcurrentHashListNode {
+        ConcurrentHashListNode() { }
         template<typename ...Args>
-        InnerListNode(Args&&... args) : value(new T(std::forward<Args>(args)...)) { }
+        ConcurrentHashListNode(Args&&... args) : value(new T(std::forward<Args>(args)...)) { }
+
+        template<typename ...Args>
+        void Reset(Args&&... args) {
+            value.reset(new T(std::forward<Args>(args)...));
+        }
+        void Reset(T *t) { value.reset(t); }
+
         std::unique_ptr<T> value;
-        InnerListNode<T> *pred {nullptr};
-        InnerListNode<T> *next {nullptr};
+        ConcurrentHashListNode<T> *pred {nullptr};
+        ConcurrentHashListNode<T> *next {nullptr};
     };
 
     template<typename T>
-    struct Bucket {
-        Bucket() : contention(new LockFreeRWContention()), begin(), end(&begin) { }
+    struct ConcurrentHashList {
+        ConcurrentHashList() : contention(new LockFreeRWContention()), begin(), end(&begin) { }
         std::unique_ptr<LockFreeRWContention> contention;
-        InnerListNode<T> begin;
-        InnerListNode<T> *end;
+        ConcurrentHashListNode<T> begin;
+        ConcurrentHashListNode<T> *end;
     };
 
     typedef std::pair<Key, Value> value_type;
     typedef value_type* iterator;
     typedef const value_type* const_iterator;
+    typedef ConcurrentHashList<value_type> Bucket;
+    typedef ConcurrentHashListNode<value_type> InnerListNode;
 
     ConcurrentHashMap(size_t bucket_hint=3) : buckets_(FindAPrime(bucket_hint)) { }
 
@@ -46,8 +55,8 @@ class ConcurrentHashMap {
 
     iterator insert(const value_type &v) {
         size_t idx = HashResult(v.first);
-        InnerListNode<value_type> *node =
-                new InnerListNode<value_type>(std::move(v));
+        InnerListNode *node =
+                new InnerListNode(std::move(v));
         std::lock_guard<LockFreeRWContention::WriteLock>
                 _(buckets_[idx].contention.GetWriteLock());
         return InsertNode(node);
@@ -55,7 +64,7 @@ class ConcurrentHashMap {
 
     iterator emplace(Key &&k, Value &&v) {
         size_t idx = HashResult(k);
-        auto *node = new InnerListNode<value_type>(
+        auto *node = new InnerListNode(
                 std::make_pair(std::forward(k), std::forward(v)));
         std::lock_guard<LockFreeRWContention::WriteLock>
                 _(buckets_[idx].contention.GetWriteLock());
@@ -92,7 +101,7 @@ class ConcurrentHashMap {
         return Hasher(key) % buckets_.size();
     }
 
-    InnerListNode<value_type> *Find(const Key &key, size_t idx) const {
+    InnerListNode *Find(const Key &key, size_t idx) const {
         assert(idx < buckets_.size());
         auto *cursor = buckets_[idx].next;
         while (!cursor && !Equal(key, cursor->value.first)) {
@@ -101,7 +110,7 @@ class ConcurrentHashMap {
         return cursor;
     }
 
-    iterator InsertNode(InnerListNode<value_type> *node, size_t idx) {
+    iterator InsertNode(InnerListNode *node, size_t idx) {
         assert(idx < buckets_.size());
         buckets_[idx].end->next = node;
         node->pred = buckets_[idx].end;
@@ -128,6 +137,6 @@ class ConcurrentHashMap {
         delete it;
     }
 
-    std::vector<Bucket<value_type>> buckets_;
+    std::vector<Bucket> buckets_;
     value_type *end_ {nullptr};
 };
