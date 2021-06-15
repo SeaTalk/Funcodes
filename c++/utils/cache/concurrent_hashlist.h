@@ -60,7 +60,7 @@ struct ConcurrentHashList {
 
     ~ConcurrentHashList() {
         Node *cur{nullptr};
-        while((cur = PopHead()) { delete cur; }
+        while((cur = PopHead())) { delete cur; }
     }
 
     bool PushBack(Node *node) {
@@ -78,16 +78,16 @@ struct ConcurrentHashList {
 
     Node *PopHead() {
         Node *hn{nullptr};
-        LockWithTryLoop(hn, head_.next);
-        head_.mtx.lock();
+        LockWithTryLoop(hn, begin_.next);
+        begin_.mtx.lock();
         Node *ret{nullptr};
-        if (head_.next != &end_) {
-            ret = head_.next;
-            head_.next = ret->next;
-            ret->next->pred = head_;
+        if (begin_.next != &end_) {
+            ret = begin_.next;
+            begin_.next = ret->next;
+            ret->next->pred = &begin_;
             ret->mode = MODE_NOT_AVAILABLE;
         }
-        head_.mtx.unlock();
+        begin_.mtx.unlock();
         hn->mtx.unlock();
         return ret;
     }
@@ -114,7 +114,7 @@ template<typename T,
 class NodeManager {
  public:
     using List = ConcurrentHashList<T, Mutex>;
-    using Node = List::Node;
+    using Node = typename List::Node;
     NodeManager(size_t capacity, size_t window_s = 60, size_t slide_s = 1)
             : window_in_seconds_(window_s), slide_in_seconds_(slide_s),
               reclaim_thread_(&NodeManager<T, Mutex>::ReuseLoop, this) {
@@ -126,7 +126,7 @@ class NodeManager {
     }
 
     ~NodeManager() {
-        running = false;
+        running_ = false;
         reclaim_thread_.join();
     }
 
@@ -153,7 +153,7 @@ class NodeManager {
             last = cur;
             cur = cur->next;
             if (cur == &reclaimer_.end_ ||
-                cur ->timeout > expire_time) { break; }
+                cur ->timeout > expired_time) { break; }
             cur->mode = MODE_AVAILABLE;
         } while (true);
         if (last == &reclaimer_.head_) { return false; }
