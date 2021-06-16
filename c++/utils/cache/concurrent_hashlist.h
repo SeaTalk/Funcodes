@@ -25,12 +25,13 @@ struct ConcurrentHashListNode {
     template<typename ...Args>
     void Reset(Args&&... args) {
         value.reset(new T(std::forward<Args>(args)...));
+        // std::cout << "reset value:" << value.get() << std::endl;
     }
     void Reset(T *t) { value.reset(t); }
 
     std::unique_ptr<T> value;
-    ConcurrentHashListNode<T, Mutex> *pred {nullptr};
-    ConcurrentHashListNode<T, Mutex> *next {nullptr};
+    std::atomic<ConcurrentHashListNode<T, Mutex> *> pred {nullptr};
+    std::atomic<ConcurrentHashListNode<T, Mutex> *> next {nullptr};
     volatile NodeMode mode {MODE_NOT_AVAILABLE};
     Mutex mtx;
     size_t timeout {NEVER_TIMEOUT}; 
@@ -38,13 +39,9 @@ struct ConcurrentHashListNode {
 
 #define LockWithTryLoop(node, ori) do { \
     bool locked{false};                 \
-    node = ori;                         \
+    node = ori.load(std::memory_order_acquire);\
     locked = node->mtx.try_lock();      \
-    if (locked ||                       \
-        node->mode == MODE_AVAILABLE) { \
-        break;                          \
-    }                                   \
-    if (locked) { node->mtx.unlock(); } \
+    if (locked) { break; }              \
 } while (true)
 
 template<typename T,
@@ -58,20 +55,15 @@ struct ConcurrentHashList {
         end_.pred = &begin_;
     }
 
-    ~ConcurrentHashList() {
-        Node *cur{nullptr};
-        while((cur = PopHead())) { delete cur; }
-    }
-
     bool PushBack(Node *node) {
         std::lock_guard<Mutex> l1(end_.mtx);
         Node *ep{nullptr};
         LockWithTryLoop(ep, end_.pred);
         node->mode = MODE_AVAILABLE;
-        ep->next = node;
-        node->pred = end_.pred;
-        node->next = &end_;
-        ep = node;
+        ep->next.store(node, std::memory_order_release);
+        node->pred.store(ep, std::memory_order_release);
+        node->next.store(&end_, std::memory_order_release);
+        end_.pred.store(node, std::memory_order_release);
         ep->mtx.unlock();
         return true;
     }
@@ -80,11 +72,11 @@ struct ConcurrentHashList {
         Node *hn{nullptr};
         LockWithTryLoop(hn, begin_.next);
         begin_.mtx.lock();
-        Node *ret{nullptr};
-        if (begin_.next != &end_) {
-            ret = begin_.next;
-            begin_.next = ret->next;
-            ret->next->pred = &begin_;
+        Node *ret = begin_.next.load(std::memory_order_acquire);
+        if (ret != &end_) {
+            Node *rn = ret->next.load(std::memory_order_acquire);
+            begin_.next.store(rn, std::memory_order_release);
+            rn->pred.store(&begin_, std::memory_order_release);
             ret->mode = MODE_NOT_AVAILABLE;
         }
         begin_.mtx.unlock();
@@ -92,17 +84,22 @@ struct ConcurrentHashList {
         return ret;
     }
 
-    Node *DetachNode(Node *node) {
+    bool DetachNode(Node *node) {
         Node *n{nullptr}, *p{nullptr};
+        bool ret {false};
         LockWithTryLoop(n, node->next);
-        node->mtx.lock();
-        LockWithTryLoop(p, node->pred);
-        p->next = n;
-        n->pred = p;
-        p->mtx.unlock();
-        node->mtx.unlock();
+        if (node->mode == MODE_AVAILABLE) {
+            node->mtx.lock();
+            node->mode = MODE_NOT_AVAILABLE;
+            LockWithTryLoop(p, node->pred);
+            p->next.store(n, std::memory_order_release);
+            n->pred.store(p, std::memory_order_release);
+            p->mtx.unlock();
+            node->mtx.unlock();
+            ret = true;
+        }
         n->mtx.unlock();
-        return node;
+        return ret;
     }
 
     Node begin_;
@@ -136,6 +133,8 @@ class NodeManager {
             ret = new Node();
             ret->mode = MODE_AVAILABLE;
             resouce_.PushBack(ret);
+        } else {
+            ret->next.store(nullptr, std::memory_order_release);
         }
         return ret;
     }
@@ -148,21 +147,21 @@ class NodeManager {
 
     bool Reuse() {
         auto expired_time = time(0);
-        Node *cur {&reclaimer_.head_}, *last{nullptr};
+        Node *cur {&reclaimer_.begin_}, *last{nullptr};
         do {
             last = cur;
-            cur = cur->next;
+            cur = cur->next.load(std::memory_order_acquire);
             if (cur == &reclaimer_.end_ ||
-                cur ->timeout > expired_time) { break; }
+                cur->timeout > expired_time) { break; }
             cur->mode = MODE_AVAILABLE;
         } while (true);
-        if (last == &reclaimer_.head_) { return false; }
-        cur = reclaimer_.head_.next;
+        if (last == &reclaimer_.begin_) { return false; }
+        cur = reclaimer_.begin_.next.load(std::memory_order_acquire);
         do {
             Node *tmp{nullptr};
             LockWithTryLoop(tmp, last->next);
-            reclaimer_.head_.next = tmp;
-            tmp->pred = &reclaimer_.head_;
+            reclaimer_.begin_.next.store(tmp, std::memory_order_release);
+            tmp->pred.store(&reclaimer_.begin_, std::memory_order_release);
             tmp->mtx.unlock();
         } while(0);
 
@@ -170,10 +169,10 @@ class NodeManager {
             std::lock_guard<Mutex> _(resouce_.end_.mtx);
             Node *tmp{nullptr};
             LockWithTryLoop(tmp, resouce_.end_.pred);
-            tmp->next = cur;
-            cur->pred = tmp;
-            last->next = &resouce_.end_;
-            resouce_.end_.pred = last;
+            tmp->next.store(cur, std::memory_order_acquire);
+            cur->pred.store(tmp, std::memory_order_release);
+            last->next.store(&resouce_.end_, std::memory_order_release);
+            resouce_.end_.pred.store(last, std::memory_order_release);
             tmp->mtx.unlock();
         } while(0);
 

@@ -3,7 +3,7 @@
 
 class SpinMutex {
  public:
-    SpinMutex() : m_(ATOMIC_FLAG_INIT) { }
+    SpinMutex() : m_(false) { }
 
     void lock() {
         while(m_.test_and_set(std::memory_order_acquire));

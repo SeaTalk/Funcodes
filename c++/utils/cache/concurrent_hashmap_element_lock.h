@@ -17,7 +17,7 @@ class ConcurrentHashMap {
     typedef std::pair<Key, Value> value_type;
     typedef ConcurrentHashList<value_type, Mutex> Bucket;
     typedef ConcurrentHashListNode<value_type, Mutex> Node;
-    typedef NodeManager<value_type, Mutex> NodeManager;
+    typedef NodeManager<value_type, Mutex> NdManager;
 
     class iterator {
      public:
@@ -36,7 +36,8 @@ class ConcurrentHashMap {
     };
 
     ConcurrentHashMap(size_t bucket_hint=3)
-            : buckets_(FindAPrime(bucket_hint)), end_(nullptr) { }
+            : buckets_(FindAPrime(bucket_hint)), end_(nullptr),
+              node_manager_(bucket_hint << 1) { }
 
     iterator find(const Key &key) const {
         size_t idx = HashResult(key);
@@ -44,18 +45,22 @@ class ConcurrentHashMap {
         return iterator(found);
     }
 
-    iterator insert(const value_type &v) {
+    std::pair<iterator, bool> insert(const value_type &v) {
         size_t idx = HashResult(v.first);
+        auto *found = Find(v.first, idx);
+        if (found) { return std::make_pair(iterator(found), false); }
         auto *node = node_manager_.GetOne();
         node->Reset(v);
-        return InsertNode(node);
+        return std::make_pair(iterator(InsertNode(node, idx)), true);
     }
 
-    iterator emplace(Key &&k, Value &&v) {
+    std::pair<iterator, bool> emplace(Key &&k, Value &&v) {
         size_t idx = HashResult(k);
+        auto *found = Find(k, idx);
+        if (found) { return std::make_pair(iterator(found), false); }
         auto *node = node_manager_.GetOne();
-        node->Reset(std::make_pair(std::forward(k), std::forward(v)));
-        return InsertNode(node);
+        node->Reset(std::make_pair(std::move(k), std::move(v)));
+        return std::make_pair(iterator(InsertNode(node, idx)), true);
     }
 
     size_t erase(const Key &key) {
@@ -68,6 +73,8 @@ class ConcurrentHashMap {
         size_t idx = HashResult(it->value->first);
         return Erase(it, idx);
     }
+
+    const iterator &end() { return end_; }
 
  private:
     static bool IsPrime(size_t n) {
@@ -88,27 +95,28 @@ class ConcurrentHashMap {
         return std::min(hint, 500009ul);
     }
 
-    size_t HashResult(const Key &key) {
-        return Hasher(key) % buckets_.size();
+    size_t HashResult(const Key &key) const {
+        return Hasher()(key) % buckets_.size();
     }
 
     Node *Find(const Key &key, size_t idx) const {
-        assert(idx < buckets_.size());
-        auto *cursor = buckets_[idx].next;
-        while (!cursor && !Equal()(key, cursor->value.first)) {
+        // assert(idx < buckets_.size());
+        auto *cursor = buckets_[idx].begin_.next.load();
+        while (cursor) {
+            if (cursor->value && Equal()(key, cursor->value->first)) { break; }
             cursor = cursor->next;
         }
         return cursor;
     }
 
     iterator InsertNode(Node *node, size_t idx) {
-        assert(idx < buckets_.size());
+        // assert(idx < buckets_.size());
         buckets_[idx].PushBack(node);
         return iterator(node);
     }
 
     size_t Erase(const Key &key, size_t idx) {
-        assert(idx < buckets_.size());
+        // assert(idx < buckets_.size());
         auto *cursor = Find(key, idx);
         if (!cursor) { return 0; }
         if (cursor == buckets_[idx].end) {
@@ -123,7 +131,7 @@ class ConcurrentHashMap {
     }
 
     size_t Erase(iterator &it, size_t idx) {
-        assert(idx < buckets_.size());
+        // assert(idx < buckets_.size());
         Reclaim(buckets_[idx].DetachNode(it.Inner()));
         return 1;
     }
@@ -136,5 +144,5 @@ class ConcurrentHashMap {
 
     std::vector<Bucket> buckets_;
     iterator end_;
-    NodeManager node_manager_;
+    NdManager node_manager_;
 };

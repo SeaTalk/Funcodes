@@ -3,7 +3,7 @@
 
 class LockFreeRWContention {
  public:
-    LockFreeRWContention() : l_(0), w_(ATOMIC_FLAG_INIT),
+    LockFreeRWContention() : l_(0), w_(false),
                              rl_(this), wl_(this) { }
 
     class LockFreeRWLock {
@@ -16,7 +16,7 @@ class LockFreeRWContention {
      public:
         ReadLock(LockFreeRWContention *c) : LockFreeRWLock(), contention_(c) { }
         void lock() { contention_->Read(); }
-        bool try_lock() { contention_->TryRead(); }
+        bool try_lock() { return contention_->TryRead(); }
         void unlock() { contention_->DoneRead(); }
 
      private:
@@ -27,7 +27,7 @@ class LockFreeRWContention {
      public:
         WriteLock(LockFreeRWContention *c) : LockFreeRWLock(), contention_(c) { }
         void lock() { contention_->Write(); }
-        bool try_lock() { contention_->TryWrite(); }
+        bool try_lock() { return contention_->TryWrite(); }
         void unlock() { contention_->DoneWrite(); }
 
      private:
