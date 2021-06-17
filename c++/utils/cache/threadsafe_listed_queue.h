@@ -17,7 +17,7 @@ class ListedQueue {
     using Node = ListedQueueNode<T>;
     ListedQueue() : head_(), tail_(&head_) { }
 
-    void PushBack(Node *node) {
+    bool PushBack(Node *node) {
         Node *tail {nullptr};
         while (true) {
             tail = tail_.load(std::memory_order_acquire);
@@ -30,10 +30,11 @@ class ListedQueue {
             }
                // std::cout << "put tail next:" << tail->next.load() << std::endl;
             if (tail_.compare_exchange_strong(tail, node, std::memory_order_release)) {
-                std::cout << "put " << *(node->value) << std::endl;
+                // std::cout << "put " << *(node->value) << std::endl;
                 break;
             }
         }
+        return true;
     }
 
     Node *PopHead() {
@@ -57,13 +58,32 @@ class ListedQueue {
             }
             break;
         }
-        if (p) {
-            std::cout << "get " << *(p->value) << std::endl;
-        } else {
-            std::cout << "get null" << std::endl;
-        }
+        // if (p) {
+        //     std::cout << "get " << *(p->value) << std::endl;
+        // } else {
+        //     std::cout << "get null" << std::endl;
+        // }
         return p;
     }
+
+    // bool DetachNode(Node *node) {
+    //     do {
+    //         Node *p = &head_, *dummy{nullptr};
+    //         bool break_loop {false};
+    //         while (true) {
+    //             dummy = p->next.load(std::memory_order_acquire);
+    //             if (!dummy) { return false; }
+    //             if (dummy != node) {
+    //                 p = p->next.load(std::memory_order_acquire);
+    //                 continue;
+    //             }
+    //             Node *dn = dummy->next(std::memory_order_acquire);
+    //             while(!dummy->next.compare_exchange_weak(dn, nullptr, std::memory_order_release));
+    //             p->
+    //         }
+    //     } while (true);
+    //     return true;
+    // }
 
  private:
     Node head_;

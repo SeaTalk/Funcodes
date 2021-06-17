@@ -27,7 +27,7 @@ struct ConcurrentHashListNode {
     std::unique_ptr<T> value;
     ConcurrentHashListNode<T, Mutex> *pred {nullptr};
     ConcurrentHashListNode<T, Mutex> *next {nullptr};
-    size_t timeout {NEVER_TIMEOUT}; 
+    size_t timeout {NEVER_TIMEOUT};
 };
 
 template<typename T, typename Mutex = SpinMutex>
@@ -125,9 +125,7 @@ public:
                 cur ->timeout > expired_time) { break; }
             cur = cur->next;
         } while (true);
-        std::cout << "after find last" << cur << std::endl;
         if (last == &reclaimer_.begin) {
-            std::cout << "last is begin" << std::endl;
             return false; }
         cur = reclaimer_.begin.next;
         do {
@@ -136,7 +134,6 @@ public:
             reclaimer_.begin.next = last->next;
             last->next->pred = &reclaimer_.begin;
         } while(0);
-std::cout << "after detached" << std::endl;
         do {
             std::lock_guard<LockFreeRWContention::WriteLock>
                 _(resouce_.contention->GetWriteLock());
@@ -146,7 +143,6 @@ std::cout << "after detached" << std::endl;
             last->next = nullptr;
             resouce_.end = last;
         } while(0);
-        std::cout << "after joined" << std::endl;
         return true;
     }
 
