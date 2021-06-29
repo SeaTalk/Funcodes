@@ -11,8 +11,7 @@
 #include "spinlock.h"
 
 #define NEVER_TIMEOUT 0x8000000000000000
-
-template<typename T, typename Mutex = SpinMutex>
+template<typename T>
 struct ConcurrentHashListNode {
     ConcurrentHashListNode() { }
     template<typename ...Args>
@@ -25,38 +24,41 @@ struct ConcurrentHashListNode {
     void Reset(T *t) { value.reset(t); }
 
     std::unique_ptr<T> value;
-    ConcurrentHashListNode<T, Mutex> *pred {nullptr};
-    ConcurrentHashListNode<T, Mutex> *next {nullptr};
-    size_t timeout {NEVER_TIMEOUT};
+    ConcurrentHashListNode<T> *pred {nullptr};
+    ConcurrentHashListNode<T> *next {nullptr};
+    long long timeout {NEVER_TIMEOUT};
 };
 
 template<typename T, typename Mutex = SpinMutex>
 struct ConcurrentHashList {
     typedef ConcurrentHashListNode<T> Node;
-    ConcurrentHashList() : contention(new LockFreeRWContention()), begin(), end(&begin) { }
+    ConcurrentHashList(bool delete_node = true) :
+        begin(), end(&begin), need_del(delete_node), contention() { }
 
     ~ConcurrentHashList() {
+        if (!need_del) { return; }
         Node *cur{nullptr};
-        while((cur = PopHead())) { delete cur; }
+        while((cur = PopHead())) {  delete cur; }
     }
 
     bool PushBack(Node *node) {
-        std::lock_guard<LockFreeRWContention::WriteLock>
-                _(contention->GetWriteLock());
-        end->next = node;
-        node->pred = end;
-        end = node;
+        std::lock_guard<Mutex> _(contention);
+        if (end != node) {
+            end->next = node;
+            node->pred = end;
+            node->next = nullptr;
+            end = node;
+        }
         return true;
     }
 
     Node *PopHead() {
-        std::lock_guard<LockFreeRWContention::WriteLock>
-                _(contention->GetWriteLock());
+        std::lock_guard<Mutex> _(contention);
         if (end == &begin) { return nullptr; }
         auto *cur = begin.next;
         if (cur == end) {
-            begin.next = nullptr;
-            end = &begin;
+            end = end->pred;
+            end->next = nullptr;
         } else {
             begin.next = cur->next;
             cur->next->pred = &begin;
@@ -65,10 +67,10 @@ struct ConcurrentHashList {
     }
 
     bool DetachNode(Node *node) {
-        std::lock_guard<LockFreeRWContention::WriteLock>
-                _(contention->GetWriteLock());
+        std::lock_guard<Mutex> _(contention);
         if (node == end) {
             end = end->pred;
+            end->next = nullptr;
         } else {
             node->pred->next = node->next;
             node->next->pred = node->pred;
@@ -76,72 +78,68 @@ struct ConcurrentHashList {
         return true;
     }
 
-    std::unique_ptr<LockFreeRWContention> contention;
-    ConcurrentHashListNode<T, Mutex> begin;
-    ConcurrentHashListNode<T, Mutex> *end;
+    Node begin;
+    Node *end;
+    bool need_del;
+    mutable Mutex contention;
 };
 
 template<typename T, typename Mutex = SpinMutex>
 class TNodeManager {
 public:
-    using List = ConcurrentHashList<T>;
+    using List = ConcurrentHashList<T, Mutex>;
     using Node = typename List::Node;
-    TNodeManager(size_t capacity, size_t window_s = 60, size_t slide_s = 1)
+    TNodeManager(size_t window_s = 1, size_t slide_s = 1)
             : window_in_seconds_(window_s), slide_in_seconds_(slide_s),
-            reclaim_thread_(&TNodeManager<T>::ReuseLoop, this) {
-        for (size_t i = 0; i < capacity; ++i) {
-            auto *node = new Node();
-            resouce_.PushBack(node);
-        }
-    }
+              reclaim_thread_(ReuseLoop, this) { }
 
     ~TNodeManager() {
         running_ = false;
         reclaim_thread_.join();
     }
 
-    Node *GetOne() {
-        Node *ret = resouce_.PopHead();
+    Node *GetOne() override {
+        Node *ret = this->resouce_.PopHead();
         if (!ret) {
             ret = new Node();
-            resouce_.PushBack(ret);
         } else {
             ret->next = nullptr;
         }
         return ret;
     }
 
-    bool Reclaim(Node *node) {
-        node->timeout = time(0) + window_in_seconds_;
-        return running_ && reclaimer_.PushBack(node);
+    bool Reclaim(Node *node) override {
+        node->timeout = time(0) + this->window_in_seconds_;
+        return this->running_ && this->reclaimer_.PushBack(node);
     }
 
-    bool Reuse() {
+    bool Reuse() override {
         auto expired_time = time(0);
-        Node *cur {&reclaimer_.begin}, *last{nullptr};
+        Node *cur {this->reclaimer_.begin.next}, *last{&this->reclaimer_.begin};
         do {
+            if (last == this->reclaimer_.end ||
+                cur->timeout > expired_time) { break; }
             last = cur;
-            if (cur == reclaimer_.end ||
-                cur ->timeout > expired_time) { break; }
             cur = cur->next;
         } while (true);
-        if (last == &reclaimer_.begin) {
-            return false; }
-        cur = reclaimer_.begin.next;
+        if (last == &this->reclaimer_.begin) { return false; }
         do {
-            std::lock_guard<LockFreeRWContention::WriteLock>
-                _(reclaimer_.contention->GetWriteLock());
-            reclaimer_.begin.next = last->next;
-            last->next->pred = &reclaimer_.begin;
+            std::lock_guard<Mutex> _(this->reclaimer_.contention);
+            cur = this->reclaimer_.begin.next;
+            if (last == this->reclaimer_.end) {
+                this->reclaimer_.end = &(this->reclaimer_.begin);
+                this->reclaimer_.begin.next = nullptr;
+            } else {
+                this->reclaimer_.begin.next = last->next;
+                last->next->pred = &this->reclaimer_.begin;
+            }
         } while(0);
         do {
-            std::lock_guard<LockFreeRWContention::WriteLock>
-                _(resouce_.contention->GetWriteLock());
-            Node *tmp = resouce_.end->pred;
-            tmp->next = cur;
-            cur->pred = tmp;
+            std::lock_guard<Mutex> _(this->resouce_.contention);
+            this->resouce_.end->next = cur;
+            cur->pred = this->resouce_.end;
             last->next = nullptr;
-            resouce_.end = last;
+            this->resouce_.end = last;
         } while(0);
         return true;
     }
