@@ -1,6 +1,8 @@
 #include <string>
 #include <vector>
 
+// this test inspired by https://github.com/pfultz2/Cloak/wiki/C-Preprocessor-tricks,-tips,-and-idioms
+
 struct Collector {
     template<typename T>
     static std::vector<std::string> Collect(T name) {
